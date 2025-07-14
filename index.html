@@ -577,11 +577,8 @@
                     <h4>📝 Custom Schema (Pydantic)</h4>
                     <div class="form-group">
                         <label for="customSchema">Define your data structure:</label>
-                        <textarea id="customSchema" class="form-control schema-textarea" placeholder="class TranscriptionData(BaseModel):
-    text: str
-    confidence: Optional[float] = None
-    language: Optional[str] = None
-    entities: List[str] = []"></textarea>
+                        <textarea id="customSchema" class="form-control schema-textarea" placeholder="class Transcription(BaseModel):
+    text: str"></textarea>
                     </div>
                     <div class="form-group">
                         <label for="customPrompt">Custom Prompt (optional):</label>
@@ -774,11 +771,8 @@
             const textarea = document.getElementById('customSchema');
             
             const examples = {
-                transcription: `class TranscriptionData(BaseModel):
-    text: str
-    confidence: Optional[float] = None
-    language: Optional[str] = None
-    entities: List[str] = []`,
+                transcription: `class Transcription(BaseModel):
+    text: str`,
                 
                 historical: `class HistoricalDocument(BaseModel):
     transcribed_text: str

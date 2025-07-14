@@ -39,6 +39,7 @@ var aiTranscription = {
         
         // Region viewer modal events
         $(document).on('click', '#regionViewerClose', () => this.closeRegionViewer());
+        $(document).on('click', '#regionViewerTranscribe', () => this.transcribeCurrentRegion());
         $(document).on('click', '#regionViewerSave', () => this.saveRegionChanges());
         $(document).on('change input', '.field-editor', () => this.markUnsavedChanges());
         $(document).on('click', '.field-selector-btn', (e) => this.selectField(e.target.dataset.field));
@@ -69,6 +70,9 @@ var aiTranscription = {
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                                 <h4 style="margin: 0; color: #374151;">Transcription Data</h4>
                                 <div>
+                                    <button id="regionViewerTranscribe" class="btn btn-primary btn-sm" style="margin-right: 8px; background: #059669;">
+                                        🤖 Transcribe Region
+                                    </button>
                                     <button id="regionViewerSave" class="btn btn-success btn-sm" style="margin-right: 8px;">
                                         💾 Save Changes
                                     </button>
@@ -130,14 +134,8 @@ var aiTranscription = {
     },
     
     loadDefaultSchema: function() {
-        const defaultSchema = `class TranscriptionData(BaseModel):
-    text: str
-    confidence: Optional[float] = None
-    language: Optional[str] = None
-    entities: List[str] = []
-    date_mentioned: Optional[str] = None
-    location_mentioned: Optional[str] = None
-    keywords: List[str] = []`;
+        const defaultSchema = `class Transcription(BaseModel):
+    text: str`;
         
         $('#customSchema').val(defaultSchema);
         this.parseCustomSchema();
@@ -350,10 +348,18 @@ var aiTranscription = {
         // Set up raw JSON editor
         rawJsonEditor.val(JSON.stringify(transcription, null, 2));
         
-        // Reset editor state
-        $('#fieldEditor').hide().val('');
-        $('#noFieldSelected').show();
-        $('#currentFieldLabel').text('Select a field to edit');
+        // Auto-select the first field if any fields exist
+        const sortedFields = Array.from(fields).sort();
+        if (sortedFields.length > 0) {
+            // Select the first field automatically
+            this.selectField(sortedFields[0]);
+        } else {
+            // Reset editor state if no fields
+            $('#fieldEditor').hide().val('');
+            $('#noFieldSelected').show();
+            $('#currentFieldLabel').text('Select a field to edit');
+        }
+        
         $('#rawJsonEditor').hide();
     },
     
@@ -589,6 +595,25 @@ var aiTranscription = {
         return preview || '<em>No data</em>';
     },
     
+    async transcribeCurrentRegion() {
+        if (!this.editingRegion) {
+            this.showNotification('No region is currently being edited.', 'error');
+            return;
+        }
+        
+        // The editingRegion is already the region object, use it directly
+        const region = this.editingRegion;
+        
+        // Transcribe the region
+        await this.transcribeRegion(region);
+        
+        // Refresh the popup viewer with new data
+        this.openRegionViewer(this.editingRegion.id);
+        
+        // Show success message
+        this.showNotification('🤖 Region transcribed successfully!', 'success');
+    },
+    
     async transcribeSelectedRegion() {
         if (!this.selectedRegionId) {
             this.showNotification('Please select a region first.', 'error');
@@ -674,7 +699,7 @@ var aiTranscription = {
         
         let promptText = customPrompt;
         if (!promptText && this.currentSchema) {
-            promptText = `Analyze this image and extract structured data that matches this schema. Use null for fields that are not present in the image. For list fields, use an empty list [] if no values are present:
+            promptText = `Provide a single value for the field text.Analyze this image and extract structured data that matches this schema. Use null for fields that are not present in the image. For list fields, use an empty list [] if no values are present:
 
 Schema: ${JSON.stringify(this.currentSchema, null, 2)}
 
