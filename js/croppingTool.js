@@ -49,6 +49,38 @@ var croptool = {
         '            </div>' +
         '        </div>' +
         '    </div>';
+
+        /* New input section for IIIF URL */
+        var image_input =
+        '    <div class="crop-align">' +
+        '        <div class="panel panel-info">' +
+        '            <div class="panel-heading">' +
+        '                <h4 class="panel-title">Load Your Own IIIF Image</h4>' +
+        '            </div>' +
+        '            <div class="panel-body">' +
+        '                <p>Paste a IIIF image URL below to load your own image for manipulation:</p>' +
+        '                <div class="form-group">' +
+        '                    <label for="iiif-url-input">IIIF Image URL:</label>' +
+        '                    <div class="input-group">' +
+        '                        <input type="text" class="form-control" id="iiif-url-input" placeholder="e.g., https://example.com/iiif/image-id" style="width: 600px;">' +
+        '                        <span class="input-group-btn">' +
+        '                            <button class="btn btn-success" type="button" id="load-iiif-btn">Load Image</button>' +
+        '                        </span>' +
+        '                    </div>' +
+        '                </div>' +
+        '                <div id="load-status" class="hidden">' +
+        '                    <div class="alert alert-info" role="alert">' +
+        '                        <i class="fa fa-spinner fa-spin"></i> Loading image...' +
+        '                    </div>' +
+        '                </div>' +
+        '                <div id="load-error" class="hidden">' +
+        '                    <div class="alert alert-danger" role="alert">' +
+        '                        <i class="fa fa-exclamation-triangle"></i> <span id="error-message">Error loading image. Please check the URL and try again.</span>' +
+        '                    </div>' +
+        '                </div>' +
+        '            </div>' +
+        '        </div>' +
+        '    </div>';
         
         var page_end;
         
@@ -181,51 +213,109 @@ var croptool = {
         '    </div>';
         
         /* inject HTML */
-        $("#cropping_tool").append(page_intro).append(image_selection).append(image_display).append(image_navbox);
+        $("#cropping_tool").append(page_intro).append(image_input).append(image_selection).append(image_display).append(image_navbox);
         
-        var imageID = getParameterByName('imageID');
-        
-        /* get metadata about requested image from IIIF server */
-        var info_url = imageID + '/info.json';
-        var result = {
-        };
-        
-        $.ajax({
-            async: true,
-            url: info_url,
-            dataType: "json",
-            statusCode: {
-                400: function () {
-                    alert('400 status code! user error');
-                    console.log('HTTP 400: Bad request');
-                    showImageInfoLoadError(400);
-                },
-                401: function () {
-                    console.log('HTTP 401: Not authorised');
-                    showImageInfoLoadError(401);
-                },
-                403: function () {
-                    console.log('HTTP 403: Forbidden');
-                    showImageInfoLoadError(403);
-                },
-                404: function () {
-                    console.log('HTTP 404: Not found');
-                    showImageInfoLoadError(404);
-                },
-                500: function () {
-                    console.log('HTTP 500: Server error');
-                    showImageInfoLoadError(500);
-                }
-            },
-            error: function (xhr) {
-                console.log(xhr.status + ': request for image metadata failed with URL ' + info_url);
-                showImageLoadError();
-            },
-            success: function (data) {
-                result = data;
-                getImageData();
+        // Add event handler for the new load button
+        $('#load-iiif-btn').click(function() {
+            var userImageID = $('#iiif-url-input').val().trim();
+            if (userImageID) {
+                loadImageFromURL(userImageID);
+            } else {
+                showLoadError('Please enter a IIIF image URL.');
             }
         });
+
+        // Allow Enter key to trigger load
+        $('#iiif-url-input').keypress(function(e) {
+            if (e.which == 13) {
+                $('#load-iiif-btn').click();
+            }
+        });
+
+        var imageID = getParameterByName('imageID');
+        
+        // If no URL parameter, show the input section and hide the image selection initially
+        if (!imageID) {
+            $('.crop-align h4, #interface, .nav-box').hide();
+        } else {
+            // If there's a URL parameter, load it immediately
+            loadImageFromURL(imageID);
+        }
+
+        function showLoadStatus() {
+            $('#load-error').addClass('hidden');
+            $('#load-status').removeClass('hidden');
+        }
+
+        function hideLoadStatus() {
+            $('#load-status').addClass('hidden');
+        }
+
+        function showLoadError(message) {
+            hideLoadStatus();
+            $('#error-message').text(message);
+            $('#load-error').removeClass('hidden');
+        }
+
+        function loadImageFromURL(imageURL) {
+            showLoadStatus();
+            
+            /* get metadata about requested image from IIIF server */
+            var info_url = imageURL + '/info.json';
+            var result = {};
+            
+            $.ajax({
+                async: true,
+                url: info_url,
+                dataType: "json",
+                statusCode: {
+                    400: function () {
+                        console.log('HTTP 400: Bad request');
+                        showImageInfoLoadError(400);
+                        showLoadError('Bad request (400): The IIIF URL appears to be malformed.');
+                    },
+                    401: function () {
+                        console.log('HTTP 401: Not authorised');
+                        showImageInfoLoadError(401);
+                        showLoadError('Unauthorized (401): You don\'t have permission to access this image.');
+                    },
+                    403: function () {
+                        console.log('HTTP 403: Forbidden');
+                        showImageInfoLoadError(403);
+                        showLoadError('Forbidden (403): Access to this image is restricted.');
+                    },
+                    404: function () {
+                        console.log('HTTP 404: Not found');
+                        showImageInfoLoadError(404);
+                        showLoadError('Not found (404): The IIIF image could not be found. Please check the URL.');
+                    },
+                    500: function () {
+                        console.log('HTTP 500: Server error');
+                        showImageInfoLoadError(500);
+                        showLoadError('Server error (500): The IIIF server encountered an error.');
+                    }
+                },
+                error: function (xhr) {
+                    console.log(xhr.status + ': request for image metadata failed with URL ' + info_url);
+                    showImageLoadError();
+                    showLoadError('Failed to load image metadata. Please check that the URL is a valid IIIF image URL.');
+                },
+                success: function (data) {
+                    hideLoadStatus();
+                    $('#load-error').addClass('hidden');
+                    result = data;
+                    
+                    // Show the image manipulation interface
+                    $('.crop-align h4, #interface, .nav-box').show();
+                    $('#set-select-all').show();
+                    
+                    // Store the current imageID for use by other functions
+                    window.currentImageID = imageURL;
+                    
+                    getImageData(result, imageURL);
+                }
+            });
+        }
         
         function showImageInfoLoadError(status_code) {
             $("#set-select-all").hide();
@@ -267,7 +357,7 @@ var croptool = {
             });
         }
         
-        function getImageData() {
+        function getImageData(result, imageURL) {
             /* image info from info.json */
             var width = result.width;
             var height = result.height;
@@ -379,8 +469,8 @@ var croptool = {
             
             /* image details for display on page */
             
-            if (imageID !== undefined) {
-                var uri_decoded = imageID + '/full/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format;
+            if (imageURL !== undefined) {
+                var uri_decoded = imageURL + '/full/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format;
                 preload([uri_decoded]);
                 var loadImage = $('#target').attr("src", uri_decoded);
                 
@@ -452,9 +542,9 @@ var croptool = {
             
             $('#interface').on('cropmove cropend', function (e, s, c) {
                 var iiif_region = Math.round((c.x * multiplier)) + ',' + Math.round(c.y * multiplier) + ',' + Math.round(c.w * multiplier) + ',' + Math.round(c.h * multiplier);
-                $('#iiif').attr('value', imageID + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
-                $('#get_url').attr('data-mfp-src', imageID + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
-                $('.img_download').attr('href', imageID + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
+                $('#iiif').attr('value', imageURL + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
+                $('#get_url').attr('data-mfp-src', imageURL + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
+                $('.img_download').attr('href', imageURL + '/' + iiif_region + '/' + iiif_width + '/' + iiif_rotation + '/' + iiif_quality + iiif_format);
                 
                 d[ge]('crop-x').value = c.x;
                 d[ge]('crop-y').value = Math.round(c.y);
@@ -480,8 +570,8 @@ var croptool = {
             });
             
             var src;
-            if (imageID !== undefined) {
-                src = imageID + '/full/800,/0/' + iiif_quality + '.jpg';
+            if (imageURL !== undefined) {
+                src = imageURL + '/full/800,/0/' + iiif_quality + '.jpg';
             }
             
             $('#text-inputs').on('change', 'input', function (e) {
