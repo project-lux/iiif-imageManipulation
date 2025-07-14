@@ -33,7 +33,7 @@ The IIIF LLM Annotator combines traditional IIIF image manipulation capabilities
 
 ### 1. Clone or Download
 ```bash
-git clone https://github.com/your-username/iiif-llm-annotator.git
+git clone https://github.com/project-lux/iiif-llm-annotator.git
 cd iiif-llm-annotator
 ```
 
