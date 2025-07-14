@@ -1,39 +1,807 @@
 <!DOCTYPE html>
-<html lang="en" prefix="og: http://ogp.me/ns#">
-  <head prefix="dctype: http://purl.org/dc/dcmitype/">
-    <title>UCD IIIF Image Manipulation Tool</title>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IIIF Image Manipulation & AI Transcription Tool</title>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
     <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.3/js/bootstrap.min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery-jcrop/2.0.0/js/Jcrop.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/clipboard.js/1.6.0/clipboard.min.js"></script>
-    <!--
-    <script src="http://jcrop-cdn.tapmodo.com/v2.0.0-RC1/js/Jcrop.js"></script>
-    -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/magnific-popup.js/1.1.0/jquery.magnific-popup.min.js"></script>
-    <script src="js/croppingTool.js"></script>
-    <!--
-    <link rel="stylesheet" href="http://jcrop-cdn.tapmodo.com/v2.0.0-RC1/css/Jcrop.css" type="text/css" />
-    -->
+    
+    <!-- Highlight.js for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/jquery-jcrop/2.0.0/css/Jcrop.css" />
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" />
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.0/css/font-awesome.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/magnific-popup.js/1.1.0/magnific-popup.min.css" />
+    
     <style>
-      body{ padding-top: 20px; }
-      input[type="text"] { width: 100px; }
-      input.iiif_link { width:800px; vertical-align:5px; }
-      p.image-options { margin:6px 0 6px 0 }
-      .btn { margin-bottom: 8px; }
-      .coordinates-selected { margin: 8px 0 8px 0; }
-      .nav-box { margin-top:1em; }
-      .nowrap { white-space: nowrap; }
-      .textbox { margin-top: 8px; }
-      .tooltip-inner { max-width: 350px; width: inherit; }
-      .crop-align{ width: 800px; margin-left: 3em; margin-right: auto; }
+        body{ padding-top: 20px; font-family: 'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif; }
+        input[type="text"] { width: 100px; }
+        input.iiif_link { width:800px; vertical-align:5px; }
+        p.image-options { margin:6px 0 6px 0 }
+        .btn { margin-bottom: 8px; }
+        .coordinates-selected { margin: 8px 0 8px 0; }
+        .nav-box { margin-top:1em; }
+        .nowrap { white-space: nowrap; }
+        .textbox { margin-top: 8px; }
+        .tooltip-inner { max-width: 350px; width: inherit; }
+        .crop-align{ width: 800px; margin-left: 3em; margin-right: auto; }
+        
+        /* Compact AI-first interface */
+        .ai-first-layout {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+        
+        .ai-first-layout h1 {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .ai-first-layout .subtitle {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin: 5px 0 20px 0;
+            text-align: center;
+        }
+        
+        /* AI Configuration Panel - Restored original styling */
+        .ai-config-panel {
+            background: #f0f9ff;
+            border: 2px solid #0ea5e9;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .ai-config-header {
+            color: #0c4a6e;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .config-section {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .config-section h4 {
+            color: #92400e;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        
+        .form-group {
+            margin-bottom: 10px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+            color: #374151;
+            font-size: 12px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 6px 10px;
+            border: 2px solid #d1d5db;
+            border-radius: 5px;
+            font-size: 12px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #286dc0;
+            box-shadow: 0 0 0 2px rgba(40, 109, 192, 0.1);
+        }
+        
+        .schema-textarea {
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+        }
+        
+        /* Simple image loader section */
+        .image-loader-section {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .image-loader-section h3 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        
+        .image-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .image-input-group input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .image-input-group button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .image-input-group button:hover {
+            background: #0056b3;
+        }
+        
+        /* Traditional controls - collapsed by default */
+        .traditional-controls {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .traditional-controls .section-header {
+            background: #e9ecef;
+            padding: 10px 15px;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .traditional-controls .section-content {
+            display: none;
+            padding: 15px;
+        }
+        
+        .traditional-controls.expanded .section-content {
+            display: block;
+        }
+        
+        .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+        
+        .toggle-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+        
+        /* Three-column AI workspace */
+        .ai-workspace {
+            display: none;
+            grid-template-columns: 1fr 300px 350px;
+            gap: 15px;
+            margin-top: 20px;
+            border-top: 2px solid #e2e8f0;
+            padding-top: 20px;
+        }
+        
+        .ai-workspace.active {
+            display: grid;
+        }
+        
+        .workspace-column {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .workspace-column-header {
+            background: #286dc0;
+            color: white;
+            padding: 10px 15px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .workspace-column-content {
+            padding: 15px;
+            height: 500px;
+            overflow-y: auto;
+        }
+        
+        /* Original IIIF cropping styles */
+        .crop-container {
+            position: relative;
+        }
+        
+        .crop-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        /* Region item styles */
+        .region-item {
+            margin-bottom: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .region-item:hover {
+            border-color: #286dc0;
+            box-shadow: 0 4px 12px rgba(40, 109, 192, 0.15);
+        }
+        
+        .region-item.selected {
+            border-color: #dc2626;
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
+        }
+        
+        .region-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .region-info {
+            background: white;
+            padding: 8px;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        
+        /* Transcription styles */
+        .transcription-item {
+            margin-bottom: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+            overflow: hidden;
+        }
+        
+        .transcription-header {
+            background: #f3f4f6;
+            padding: 8px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        
+        .transcription-content {
+            padding: 12px;
+        }
+        
+        .transcription-text {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px;
+            min-height: 70px;
+            font-family: 'Source Sans Pro', sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            resize: vertical;
+            width: 100%;
+        }
+        
+        .transcription-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 6px;
+        }
+        
+        .btn-sm {
+            padding: 3px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-success {
+            background: #059669;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #047857;
+        }
+        
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+        
+        .btn-info {
+            background: #0ea5e9;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background: #0284c7;
+        }
+        
+        /* Workspace controls */
+        .workspace-controls {
+            background: white;
+            padding: 15px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .btn-ai {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-ai:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 15px rgba(5, 150, 105, 0.3);
+        }
+        
+        .btn-ai:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Status indicators */
+        .status-indicator {
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-processing {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #f59e0b;
+        }
+        
+        .status-ready {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #059669;
+        }
+        
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #dc2626;
+        }
+        
+        /* Loading spinner */
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #286dc0;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            background: #003568;
+            color: white;
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.3rem;
+        }
+        
+        .close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0;
+            width: 25px;
+            height: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .close:hover {
+            opacity: 0.7;
+        }
+        
+        .modal-body {
+            padding: 25px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 1200px) {
+            .ai-workspace {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+        }
+        
+        @media (max-width: 900px) {
+            .ai-workspace {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .workspace-column-content {
+                height: 300px;
+            }
+        }
     </style>
-  </head>
-  <body>
-    <div id="cropping_tool"> </div>
-  </body>
+</head>
+<body>
+    <div class="ai-first-layout">
+        <h1>🤖 IIIF AI Transcription Tool</h1>
+        <p class="subtitle">AI-powered transcription of IIIF images with custom schema support</p>
+
+        <!-- AI Configuration Panel (Expanded by Default) -->
+        <div class="ai-config-panel">
+            <div class="ai-config-header" onclick="toggleAIConfig()">
+                🔧 Vertex AI Configuration
+                <span id="aiConfigToggle">▼</span>
+            </div>
+            <div id="aiConfigContent">
+                <div class="config-section">
+                    <h4>🔐 Vertex AI Settings</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label for="aiProjectId">Project ID:</label>
+                            <input type="text" id="aiProjectId" class="form-control" value="cultural-heritage-gemini" placeholder="your-gcp-project-id">
+                        </div>
+                        <div class="form-group">
+                            <label for="aiLocation">Location:</label>
+                            <select id="aiLocation" class="form-control">
+                                <option value="us-central1">us-central1</option>
+                                <option value="us-east1">us-east1</option>
+                                <option value="us-west1">us-west1</option>
+                                <option value="europe-west1">europe-west1</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label for="aiModel">Model:</label>
+                            <select id="aiModel" class="form-control">
+                                <option value="google/gemini-2.0-flash-lite-001">Gemini 2.0 Flash Lite</option>
+                                <option value="google/gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash Preview</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="aiAccessToken">Access Token:</label>
+                            <input type="password" id="aiAccessToken" class="form-control" placeholder="GCP access token">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h4>📝 Custom Schema (Pydantic)</h4>
+                    <div class="form-group">
+                        <label for="customSchema">Define your data structure:</label>
+                        <textarea id="customSchema" class="form-control schema-textarea" placeholder="class TranscriptionData(BaseModel):
+    text: str
+    confidence: Optional[float] = None
+    language: Optional[str] = None
+    entities: List[str] = []"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="customPrompt">Custom Prompt (optional):</label>
+                        <textarea id="customPrompt" class="form-control" style="min-height: 60px;" placeholder="Add custom instructions for the AI model..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-info btn-sm" onclick="loadSchemaExample('transcription')">Basic Transcription</button>
+                        <button class="btn btn-info btn-sm" onclick="loadSchemaExample('historical')">Historical Document</button>
+                        <button class="btn btn-info btn-sm" onclick="loadSchemaExample('manuscript')">Manuscript Analysis</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- IIIF Image Loader -->
+        <div class="image-loader-section">
+            <h3>📷 Load IIIF Image</h3>
+            <div class="image-input-group">
+                <input type="text" id="imageInput" placeholder="Enter IIIF image URL (e.g., https://collections.library.yale.edu/iiif/2/32497081)">
+                <button onclick="loadImage()">Load Image</button>
+            </div>
+            <div id="loadStatus"></div>
+        </div>
+
+        <!-- Traditional IIIF Controls (Collapsed by Default) -->
+        <div class="traditional-controls" id="traditionalControls">
+            <div class="section-header" onclick="toggleTraditionalControls()">
+                <span>⚙️ Traditional IIIF Manipulation Controls</span>
+                <span class="toggle-icon collapsed" id="traditionalToggle">▼</span>
+            </div>
+            <div class="section-content">
+                <div id="cropping_tool">
+                    <!-- Original IIIF cropping interface will be injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Workspace (3-column layout) -->
+        <div class="ai-workspace" id="aiWorkspace">
+            <!-- Workspace Controls -->
+            <div class="workspace-controls" style="grid-column: 1 / -1;">
+                <div class="control-group">
+                    <button id="addRegionBtn" class="btn-ai">
+                        📍 Add Current Crop as Region
+                    </button>
+                    <button id="transcribeSelectedBtn" class="btn-ai" disabled>
+                        🤖 Transcribe Selected Region
+                    </button>
+                    <button id="transcribeAllBtn" class="btn-ai">
+                        🚀 Transcribe All Regions
+                    </button>
+                </div>
+                
+                <div class="control-group">
+                    <span id="regionCount" class="status-indicator status-ready">0 Regions</span>
+                    <span id="transcriptionStatus" class="status-indicator status-ready">Ready</span>
+                </div>
+                
+                <div class="control-group">
+                    <button id="clearAllBtn" class="btn-ai" style="background: #dc2626;">
+                        🗑️ Clear All
+                    </button>
+                    <button id="exportJsonBtn" class="btn-ai" style="background: #8b5cf6;">
+                        📄 Export JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- Column 1: Original Image with Cropping -->
+            <div class="workspace-column">
+                <div class="workspace-column-header">🖼️ Original Image & Cropping</div>
+                <div class="workspace-column-content">
+                    <div class="crop-container" id="cropContainer">
+                        <!-- IIIF cropping interface will be displayed here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 2: Cropped Regions -->
+            <div class="workspace-column">
+                <div class="workspace-column-header">✂️ Cropped Regions</div>
+                <div class="workspace-column-content">
+                    <div id="regionsContainer">
+                        <p style="color: #6b7280; text-align: center; margin-top: 40px; font-size: 11px;">
+                            No regions selected yet.<br>
+                            Crop an area above and click "Add Current Crop as Region"
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 3: AI Transcriptions -->
+            <div class="workspace-column">
+                <div class="workspace-column-header">📝 AI Transcriptions</div>
+                <div class="workspace-column-content">
+                    <div id="transcriptionsContainer">
+                        <p style="color: #6b7280; text-align: center; margin-top: 40px; font-size: 11px;">
+                            Transcriptions will appear here after AI processing.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export JSON Modal -->
+        <div id="exportModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>📄 Export Transcription Data</h3>
+                    <button class="close" onclick="closeExportModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p style="margin-bottom: 15px; color: #6b7280; font-size: 14px;">
+                        This JSON contains all your regions, coordinates, and transcriptions:
+                    </p>
+                    <div style="background: #0d1117; color: #e6edf3; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.5; padding: 20px; border-radius: 10px; overflow-x: auto; white-space: pre; border: 1px solid #30363d; max-height: 350px; overflow-y: auto;" id="exportJsonContent"></div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button onclick="copyExportJson()" style="background: #059669; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px;">
+                            📋 Copy to Clipboard
+                        </button>
+                        <button onclick="downloadExportJson()" style="background: #8b5cf6; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px;">
+                            💾 Download File
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/croppingTool.js"></script>
+    <script src="js/aiTranscription.js"></script>
+    <script>
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            croptool.init();
+            checkForImageParameter();
+        });
+
+        function toggleAIConfig() {
+            const content = document.getElementById('aiConfigContent');
+            const toggle = document.getElementById('aiConfigToggle');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                toggle.textContent = '▶';
+            }
+        }
+
+        function toggleTraditionalControls() {
+            const controls = document.getElementById('traditionalControls');
+            const toggle = document.getElementById('traditionalToggle');
+            
+            controls.classList.toggle('expanded');
+            toggle.classList.toggle('collapsed');
+        }
+
+        function loadImage() {
+            const imageURL = document.getElementById('imageInput').value.trim();
+            if (!imageURL) {
+                alert('Please enter a IIIF image URL');
+                return;
+            }
+            
+            // Set the imageID parameter for the cropping tool
+            window.currentImageID = imageURL;
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('imageID', imageURL);
+            window.history.pushState({}, '', newUrl);
+            
+            // Initialize the cropping tool with the new image
+            croptool.init();
+        }
+
+        function checkForImageParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const imageID = urlParams.get('imageID');
+            
+            if (imageID) {
+                document.getElementById('imageInput').value = imageID;
+                window.currentImageID = imageID;
+                croptool.init();
+            }
+        }
+
+        // Schema example functions
+        function loadSchemaExample(type) {
+            const textarea = document.getElementById('customSchema');
+            
+            const examples = {
+                transcription: `class TranscriptionData(BaseModel):
+    text: str
+    confidence: Optional[float] = None
+    language: Optional[str] = None
+    entities: List[str] = []`,
+                
+                historical: `class HistoricalDocument(BaseModel):
+    transcribed_text: str
+    document_type: str
+    date_mentioned: Optional[str] = None
+    people_mentioned: List[str] = []
+    places_mentioned: List[str] = []
+    handwriting_quality: str
+    language: str = "English"`,
+                
+                manuscript: `class ManuscriptAnalysis(BaseModel):
+    transcribed_text: str
+    script_type: str
+    ink_color: str
+    condition: str
+    marginalia: List[str] = []
+    illuminations: bool = False
+    estimated_date: Optional[str] = None`
+            };
+            
+            textarea.value = examples[type] || examples.transcription;
+        }
+    </script>
+</body>
 </html>
 
