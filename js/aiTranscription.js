@@ -957,8 +957,6 @@ Focus on extracting text, identifying any entities, dates, locations, and releva
                                             console.log('Handling Old Church Slavonic model response as plain text');
                                             return { 
                                                 text: cleanedResult,
-                                                language: "Old Church Slavonic",
-                                                confidence: 0.8 
                                             };
                                         }
                                         
