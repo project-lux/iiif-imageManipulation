@@ -384,8 +384,12 @@ var aiTranscription = {
     
     formatFieldValue: function(value) {
         if (value === null || value === undefined) return '';
-        if (Array.isArray(value)) return value.join(', ');
+        if (Array.isArray(value)) {
+            // Join array items with commas, preserving any line breaks within items
+            return value.join(', ');
+        }
         if (typeof value === 'object') return JSON.stringify(value, null, 2);
+        // Preserve line breaks in string values
         return String(value);
     },
     
@@ -396,7 +400,11 @@ var aiTranscription = {
         if (this.currentSchema && this.currentSchema.properties && this.currentSchema.properties[fieldName]) {
             const fieldSchema = this.currentSchema.properties[fieldName];
             if (fieldSchema.type === 'array') {
-                return value.split(',').map(item => item.trim()).filter(item => item);
+                // For arrays, split on commas but preserve internal whitespace (including line breaks)
+                return value.split(',').map(item => {
+                    // Only trim leading/trailing spaces, not newlines
+                    return item.replace(/^[ \t]+|[ \t]+$/g, '');
+                }).filter(item => item);
             }
             if (fieldSchema.type === 'number') {
                 const num = parseFloat(value);
@@ -657,9 +665,23 @@ var aiTranscription = {
     async transcribeRegion(region) {
         try {
             this.setProcessingStatus(true);
-            this.updateTranscriptionStatus('Calling Vertex AI...');
             
-            const transcription = await this.callVertexAI(region.imageUrl);
+            const provider = $('#aiProvider').val();
+            console.log('Selected AI provider:', provider);
+            let transcription;
+            
+            if (provider === 'vertex') {
+                this.updateTranscriptionStatus('Calling Vertex AI...');
+                transcription = await this.callVertexAI(region.imageUrl);
+            } else if (provider === 'huggingface') {
+                this.updateTranscriptionStatus('Calling HuggingFace...');
+                console.log('About to call HuggingFace API...');
+                transcription = await this.callHuggingFace(region.imageUrl);
+                console.log('HuggingFace API returned:', transcription);
+            } else {
+                throw new Error(`Unknown AI provider selected: ${provider}`);
+            }
+            
             region.transcription = transcription;
             region.timestamp = new Date().toISOString();
             
@@ -751,14 +773,242 @@ Focus on extracting text, identifying any entities, dates, locations, and releva
         const data = await response.json();
         const responseText = data.choices[0].message.content;
         
-        // Clean and parse the response
-        const cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        // Clean and parse the response (preserve internal whitespace)
+        let cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '');
+        // Only trim leading/trailing spaces, not newlines
+        cleanedResponse = cleanedResponse.replace(/^[ \t]+|[ \t]+$/gm, '');
         
         try {
             return JSON.parse(cleanedResponse);
         } catch (error) {
             throw new Error(`Failed to parse JSON response: ${cleanedResponse}`);
         }
+    },
+    
+    async callHuggingFace(imageUrl) {
+        const endpoint = $('#hfEndpoint').val().trim();
+        const model = $('#hfModel').val();
+        const hfToken = $('#hfToken').val().trim();
+        const customPrompt = $('#customPrompt').val().trim();
+        
+        if (!endpoint) {
+            throw new Error('Please configure your HuggingFace endpoint.');
+        }
+        
+        if (!hfToken) {
+            throw new Error('Please provide your HuggingFace token.');
+        }
+        
+        console.log('HuggingFace call initiated:', { endpoint, model, imageUrl, hasToken: !!hfToken });
+        
+        let promptText = customPrompt;
+        
+        // Model-specific prompt handling
+        const isOldChurchSlavonic = model.includes('old-church-slavonic');
+        console.log('Using model:', model, 'Is Old Church Slavonic:', isOldChurchSlavonic);
+        
+        if (!promptText && this.currentSchema) {
+            if (isOldChurchSlavonic) {
+                // Simplified prompt for specialized model
+                promptText = `Transcribe the text in this image. Extract the text exactly as it appears, preserving any Old Church Slavonic characters and formatting. Return the result as JSON with a "text" field containing the transcription.`;
+            } else {
+                promptText = `Analyze this image and extract structured data that matches this schema. Use null for fields that are not present in the image. For list fields, use an empty list [] if no values are present:
+
+Schema: ${JSON.stringify(this.currentSchema, null, 2)}
+
+Focus on extracting text, identifying any entities, dates, locations, and relevant keywords from the image content. Return valid JSON only.`;
+            }
+        }
+        
+        if (!promptText) {
+            if (isOldChurchSlavonic) {
+                promptText = "Transcribe the Old Church Slavonic text in this image exactly as it appears.";
+            } else {
+                promptText = "Convert the image to text.";
+            }
+        }
+        
+        console.log('Using prompt:', promptText);
+        
+        // Step 1: Initiate the transcription
+        const requestBody = {
+            data: [
+                {
+                    path: imageUrl,
+                    meta: { _type: "gradio.FileData" }
+                },
+                model,
+                promptText
+            ]
+        };
+        
+        console.log('HuggingFace request body:', JSON.stringify(requestBody, null, 2));
+        
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        if (hfToken) {
+            headers['Authorization'] = `Bearer ${hfToken}`;
+        }
+        
+        const initiateResponse = await fetch(`${endpoint}/gradio_api/call/transcribe`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!initiateResponse.ok) {
+            const errorText = await initiateResponse.text();
+            console.error('HuggingFace initiation error:', errorText);
+            throw new Error(`HuggingFace API initiation failed: ${initiateResponse.status} ${initiateResponse.statusText}`);
+        }
+        
+        const initiateData = await initiateResponse.json();
+        console.log('HuggingFace initiation response:', initiateData);
+        
+        const eventId = initiateData.event_id;
+        
+        if (!eventId) {
+            throw new Error('Failed to get event ID from HuggingFace API');
+        }
+        
+        console.log('Got event ID:', eventId);
+        
+        // Step 2: Poll for the result
+        let attempts = 0;
+        // Longer timeout for specialized models
+        const maxAttempts = isOldChurchSlavonic ? 120 : 60; // 2 minutes for Old Church Slavonic, 1 minute for others
+        console.log(`Using ${maxAttempts} second timeout for model: ${model}`);
+        
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            attempts++;
+            
+            try {
+                console.log(`Polling attempt ${attempts}/${maxAttempts} for event ${eventId}`);
+                
+                const pollHeaders = {};
+                if (hfToken) {
+                    pollHeaders['Authorization'] = `Bearer ${hfToken}`;
+                }
+                
+                const resultResponse = await fetch(`${endpoint}/gradio_api/call/transcribe/${eventId}`, {
+                    headers: pollHeaders
+                });
+                
+                if (!resultResponse.ok) {
+                    console.warn(`Poll attempt ${attempts} failed: ${resultResponse.status} ${resultResponse.statusText}`);
+                    continue;
+                }
+                
+                const resultText = await resultResponse.text();
+                console.log(`Poll attempt ${attempts} response:`, resultText);
+                
+                // Special logging for Old Church Slavonic model
+                if (isOldChurchSlavonic) {
+                    console.log('Old Church Slavonic model raw response length:', resultText.length);
+                    console.log('Old Church Slavonic model response preview:', resultText.substring(0, 200));
+                }
+                
+                if (!resultText.trim()) {
+                    console.log('Empty response, continuing to poll...');
+                    continue;
+                }
+                
+                const lines = resultText.split('\n');
+                
+                // Look for the final result line
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const jsonString = line.substring(6);
+                            console.log('Parsing data line:', jsonString);
+                            
+                            const data = JSON.parse(jsonString);
+                            console.log('Parsed data:', data);
+                            
+                            if (data && Array.isArray(data) && data.length > 0) {
+                                const result = data[0];
+                                console.log('Got result:', result);
+                                
+                                if (typeof result === 'string' && result.trim()) {
+                                    // Clean markdown formatting from response (preserve line breaks)
+                                    let cleanedResult = result;
+                                    
+                                    // Remove markdown code blocks (preserve internal whitespace)
+                                    cleanedResult = cleanedResult.replace(/^```json\s*/i, '');
+                                    cleanedResult = cleanedResult.replace(/\s*```\s*$/, '');
+                                    // Only trim spaces/tabs, not newlines
+                                    cleanedResult = cleanedResult.replace(/^[ \t]+|[ \t]+$/gm, '');
+                                    
+                                    console.log('Cleaned result:', cleanedResult);
+                                    
+                                    // Try to parse as JSON, fallback to text
+                                    try {
+                                        const parsedResult = JSON.parse(cleanedResult);
+                                        console.log('Parsed JSON result:', parsedResult);
+                                        return parsedResult;
+                                    } catch (e) {
+                                        console.log('JSON parsing failed, using text result:', cleanedResult);
+                                        
+                                        // For Old Church Slavonic model, create a structured response
+                                        if (model && model.includes('old-church-slavonic')) {
+                                            console.log('Handling Old Church Slavonic model response as plain text');
+                                            return { 
+                                                text: cleanedResult,
+                                                language: "Old Church Slavonic",
+                                                confidence: 0.8 
+                                            };
+                                        }
+                                        
+                                        return { text: cleanedResult };
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse line:', line, 'Error:', e);
+                        }
+                                            }
+                    }
+                    
+                    // Special handling for Old Church Slavonic model - look for any text content
+                    if (isOldChurchSlavonic && resultText.trim()) {
+                        console.log('Old Church Slavonic: Checking for any text content in response');
+                        
+                        // Try to find any meaningful text in the response
+                        const lines = resultText.split('\n');
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            if (trimmedLine && !trimmedLine.startsWith('data:') && !trimmedLine.startsWith('event:')) {
+                                console.log('Old Church Slavonic: Found potential text content:', trimmedLine);
+                                try {
+                                    // Try parsing as JSON first
+                                    const parsed = JSON.parse(trimmedLine);
+                                    return parsed;
+                                } catch {
+                                    // If not JSON, treat as plain text
+                                    if (trimmedLine.length > 5) { // Reasonable text length
+                                        return { 
+                                            text: trimmedLine,
+                                            language: "Old Church Slavonic",
+                                            confidence: 0.7 
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Attempt ${attempts} failed:`, error);
+                }
+            }
+        
+        // Enhanced error message for Old Church Slavonic model
+        const errorMsg = isOldChurchSlavonic 
+            ? 'Old Church Slavonic model timed out. The specialized model may need more time or have different output format.'
+            : 'HuggingFace API timed out waiting for result';
+        throw new Error(errorMsg);
     },
     
     blobToBase64: function(blob) {

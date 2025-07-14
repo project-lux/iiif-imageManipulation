@@ -20,8 +20,16 @@
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.0/css/font-awesome.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/magnific-popup.js/1.1.0/magnific-popup.min.css" />
     
+    <!-- Fonts with extended Unicode support for Old Church Slavonic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600&family=Noto+Serif:wght@400;500&display=swap" rel="stylesheet">
+    
     <style>
-        body{ padding-top: 20px; font-family: 'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif; }
+        body{ 
+            padding-top: 20px; 
+            font-family: 'Noto Sans', 'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif;
+        }
         input[type="text"] { width: 100px; }
         input.iiif_link { width:800px; vertical-align:5px; }
         p.image-options { margin:6px 0 6px 0 }
@@ -197,6 +205,34 @@
         
         .toggle-icon {
             transition: transform 0.3s ease;
+        }
+        
+        /* Enhanced Unicode support for Old Church Slavonic and extended Cyrillic */
+        .field-editor, #rawJsonEditor, .transcription-text, .region-transcription, 
+        textarea, input[type="text"], .modal-body, .workspace-column-content {
+            font-family: 'Noto Sans', 'Noto Serif', 'DejaVu Sans', 'Arial Unicode MS', sans-serif !important;
+        }
+        
+        /* Ensure line breaks are preserved in text editing areas */
+        .field-editor, #rawJsonEditor, textarea.transcription-text {
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+        }
+        
+        /* Specific support for transcription display areas */
+        .transcription-display, .field-value, pre, code {
+            font-family: 'Noto Sans Mono', 'Noto Sans', 'Courier New', monospace !important;
+            unicode-bidi: plaintext;
+            direction: ltr;
+        }
+        
+        /* Ensure proper rendering of Old Church Slavonic and extended Cyrillic */
+        * {
+            -webkit-font-feature-settings: "kern" 1, "liga" 1;
+            -moz-font-feature-settings: "kern" 1, "liga" 1;
+            font-feature-settings: "kern" 1, "liga" 1;
+            text-rendering: optimizeLegibility;
         }
         
         .toggle-icon.collapsed {
@@ -537,11 +573,24 @@
         <!-- AI Configuration Panel (Expanded by Default) -->
         <div class="ai-config-panel">
             <div class="ai-config-header" onclick="toggleAIConfig()">
-                🔧 Vertex AI Configuration
+                🔧 <span id="aiConfigTitle">Vertex AI Configuration</span>
                 <span id="aiConfigToggle">▼</span>
             </div>
             <div id="aiConfigContent">
+                <!-- Provider Selection -->
                 <div class="config-section">
+                    <h4>🤖 AI Provider</h4>
+                    <div class="form-group">
+                        <label for="aiProvider">Choose Provider:</label>
+                        <select id="aiProvider" class="form-control" onchange="switchAIProvider()">
+                            <option value="vertex">Vertex AI (Google)</option>
+                            <option value="huggingface">HuggingFace</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Vertex AI Settings -->
+                <div class="config-section" id="vertexConfig">
                     <h4>🔐 Vertex AI Settings</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
@@ -570,6 +619,28 @@
                             <label for="aiAccessToken">Access Token:</label>
                             <input type="password" id="aiAccessToken" class="form-control" placeholder="GCP access token">
                         </div>
+                    </div>
+                </div>
+                
+                <!-- HuggingFace Settings -->
+                <div class="config-section" id="huggingfaceConfig" style="display: none;">
+                    <h4>🤗 HuggingFace Settings</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label for="hfModel">Model:</label>
+                            <select id="hfModel" class="form-control">
+                                <option value="Qwen/Qwen2.5-VL-7B-Instruct">Qwen 2.5 VL 7B Instruct</option>
+                                <option value="medieval-data/qwen2.5-vl-old-church-slavonic">Medieval Old Church Slavonic</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="hfToken">HF Token:</label>
+                            <input type="password" id="hfToken" class="form-control" placeholder="Your HuggingFace token">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="hfEndpoint">API Endpoint:</label>
+                        <input type="text" id="hfEndpoint" class="form-control" value="https://wjbmattingly-qwen25-transcriber.hf.space" placeholder="HuggingFace Space URL">
                     </div>
                 </div>
                 
@@ -736,6 +807,23 @@
             
             controls.classList.toggle('expanded');
             toggle.classList.toggle('collapsed');
+        }
+
+        function switchAIProvider() {
+            const provider = document.getElementById('aiProvider').value;
+            const vertexConfig = document.getElementById('vertexConfig');
+            const huggingfaceConfig = document.getElementById('huggingfaceConfig');
+            const configTitle = document.getElementById('aiConfigTitle');
+            
+            if (provider === 'vertex') {
+                vertexConfig.style.display = 'block';
+                huggingfaceConfig.style.display = 'none';
+                configTitle.textContent = 'Vertex AI Configuration';
+            } else if (provider === 'huggingface') {
+                vertexConfig.style.display = 'none';
+                huggingfaceConfig.style.display = 'block';
+                configTitle.textContent = 'HuggingFace Configuration';
+            }
         }
 
         function loadImage() {
