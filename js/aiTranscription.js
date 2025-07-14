@@ -8,11 +8,15 @@ var aiTranscription = {
     selectedRegionId: null,
     currentSchema: null,
     isProcessing: false,
+    editingRegion: null,
+    hasUnsavedChanges: false,
+    originalTranscription: null,
     
     init: function() {
         this.setupEventListeners();
         this.loadDefaultSchema();
         this.showWorkspaceWhenImageLoaded();
+        this.createRegionViewerModal();
     },
     
     setupEventListeners: function() {
@@ -32,6 +36,86 @@ var aiTranscription = {
                 this.closeExportModal();
             }
         });
+        
+        // Region viewer modal events
+        $(document).on('click', '#regionViewerClose', () => this.closeRegionViewer());
+        $(document).on('click', '#regionViewerSave', () => this.saveRegionChanges());
+        $(document).on('change input', '.field-editor', () => this.markUnsavedChanges());
+        $(document).on('click', '.field-selector-btn', (e) => this.selectField(e.target.dataset.field));
+    },
+    
+    createRegionViewerModal: function() {
+        const modalHtml = `
+            <div id="regionViewerModal" class="modal" style="display: none;">
+                <div class="modal-content" style="width: 95%; max-width: 1200px; height: 80vh;">
+                    <div class="modal-header">
+                        <h3 id="regionViewerTitle">Edit Region Transcription</h3>
+                        <button id="regionViewerClose" class="close">&times;</button>
+                    </div>
+                    <div class="modal-body" style="padding: 0; height: calc(80vh - 120px); display: flex;">
+                        <!-- Left side: Cropped image -->
+                        <div style="flex: 1; padding: 20px; border-right: 2px solid #e2e8f0; display: flex; flex-direction: column;">
+                            <h4 style="margin: 0 0 15px 0; color: #374151;">Cropped Region</h4>
+                            <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <img id="regionViewerImage" src="" alt="Region" style="max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            </div>
+                            <div id="regionViewerInfo" style="margin-top: 15px; padding: 10px; background: #f3f4f6; border-radius: 6px; font-size: 12px; color: #6b7280;">
+                                <!-- Region info will be populated here -->
+                            </div>
+                        </div>
+                        
+                        <!-- Right side: Field editor -->
+                        <div style="flex: 1; padding: 20px; display: flex; flex-direction: column;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="margin: 0; color: #374151;">Transcription Data</h4>
+                                <div>
+                                    <button id="regionViewerSave" class="btn btn-success btn-sm" style="margin-right: 8px;">
+                                        💾 Save Changes
+                                    </button>
+                                    <span id="unsavedIndicator" style="display: none; color: #dc2626; font-size: 12px; font-weight: 600;">
+                                        ● Unsaved changes
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <!-- Field selector -->
+                            <div id="fieldSelector" style="margin-bottom: 15px;">
+                                <p style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">Select field to edit:</p>
+                                <div id="fieldButtons" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                    <!-- Field buttons will be populated here -->
+                                </div>
+                            </div>
+                            
+                            <!-- Field editor -->
+                            <div style="flex: 1; display: flex; flex-direction: column;">
+                                <div id="currentFieldLabel" style="font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 14px;">
+                                    Select a field to edit
+                                </div>
+                                <div id="fieldEditorContainer" style="flex: 1; position: relative;">
+                                    <div id="noFieldSelected" style="display: flex; align-items: center; justify-content: center; height: 100%; color: #9ca3af; font-style: italic;">
+                                        Click a field button above to start editing
+                                    </div>
+                                    <textarea id="fieldEditor" class="field-editor transcription-text" style="display: none; width: 100%; height: 100%; resize: none; font-size: 13px; font-family: 'Courier New', monospace;" placeholder="Enter field value..."></textarea>
+                                </div>
+                            </div>
+                            
+                            <!-- Raw JSON view toggle -->
+                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                                <button id="toggleRawJson" class="btn btn-info btn-sm" style="font-size: 11px;">
+                                    📄 Toggle Raw JSON View
+                                </button>
+                                <textarea id="rawJsonEditor" class="field-editor" style="display: none; width: 100%; height: 150px; margin-top: 10px; font-size: 11px; font-family: 'Courier New', monospace;" placeholder="Raw JSON data..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('body').append(modalHtml);
+        
+        // Add toggle functionality for raw JSON
+        $(document).on('click', '#toggleRawJson', () => this.toggleRawJsonView());
     },
     
     showWorkspaceWhenImageLoaded: function() {
@@ -186,7 +270,7 @@ var aiTranscription = {
         this.regions.forEach((region, index) => {
             const selectedClass = region.id === this.selectedRegionId ? 'selected' : '';
             html += `
-                <div class="region-item ${selectedClass}" data-region-id="${region.id}" onclick="aiTranscription.selectRegion(${region.id})">
+                <div class="region-item ${selectedClass}" data-region-id="${region.id}" onclick="aiTranscription.openRegionViewer(${region.id})">
                     <img src="${region.imageUrl}" alt="Region ${index + 1}" class="region-image" />
                     <div class="region-info">
                         <strong>Region ${index + 1}</strong><br>
@@ -199,6 +283,235 @@ var aiTranscription = {
         });
         
         container.html(html);
+    },
+    
+    openRegionViewer: function(regionId) {
+        const region = this.regions.find(r => r.id === regionId);
+        if (!region) return;
+        
+        this.editingRegion = region;
+        this.originalTranscription = region.transcription ? JSON.parse(JSON.stringify(region.transcription)) : null;
+        this.hasUnsavedChanges = false;
+        
+        // Set up the modal
+        $('#regionViewerTitle').text(`Edit Region ${this.regions.findIndex(r => r.id === regionId) + 1} Transcription`);
+        $('#regionViewerImage').attr('src', region.imageUrl);
+        $('#regionViewerInfo').html(`
+            <strong>Position:</strong> ${region.coordinates.x}, ${region.coordinates.y}<br>
+            <strong>Size:</strong> ${region.coordinates.width} × ${region.coordinates.height}px<br>
+            <strong>Last modified:</strong> ${region.timestamp ? new Date(region.timestamp).toLocaleString() : 'Never'}
+        `);
+        
+        // Set up field buttons and editor
+        this.setupFieldEditor(region);
+        
+        // Show the modal
+        $('#regionViewerModal').show();
+        this.updateUnsavedIndicator();
+    },
+    
+    setupFieldEditor: function(region) {
+        const transcription = region.transcription || {};
+        const fieldButtons = $('#fieldButtons');
+        const rawJsonEditor = $('#rawJsonEditor');
+        
+        // Create field buttons based on schema or existing data
+        fieldButtons.empty();
+        const fields = new Set();
+        
+        // Add fields from schema
+        if (this.currentSchema && this.currentSchema.properties) {
+            Object.keys(this.currentSchema.properties).forEach(field => fields.add(field));
+        }
+        
+        // Add fields from existing transcription
+        if (transcription) {
+            Object.keys(transcription).forEach(field => fields.add(field));
+        }
+        
+        // If no fields, add default ones
+        if (fields.size === 0) {
+            ['text', 'confidence', 'language', 'entities'].forEach(field => fields.add(field));
+        }
+        
+        // Create buttons
+        Array.from(fields).sort().forEach(field => {
+            const value = transcription[field];
+            const hasValue = value !== undefined && value !== null && value !== '';
+            const buttonClass = hasValue ? 'btn-success' : 'btn-outline-secondary';
+            
+            fieldButtons.append(`
+                <button class="btn ${buttonClass} btn-sm field-selector-btn" data-field="${field}" style="font-size: 11px;">
+                    ${field} ${hasValue ? '✓' : ''}
+                </button>
+            `);
+        });
+        
+        // Set up raw JSON editor
+        rawJsonEditor.val(JSON.stringify(transcription, null, 2));
+        
+        // Reset editor state
+        $('#fieldEditor').hide().val('');
+        $('#noFieldSelected').show();
+        $('#currentFieldLabel').text('Select a field to edit');
+        $('#rawJsonEditor').hide();
+    },
+    
+    selectField: function(fieldName) {
+        const transcription = this.editingRegion.transcription || {};
+        const value = transcription[fieldName];
+        
+        // Update UI
+        $('#currentFieldLabel').text(`Editing: ${fieldName}`);
+        $('#noFieldSelected').hide();
+        $('#fieldEditor').show().val(this.formatFieldValue(value)).focus();
+        
+        // Update button states
+        $('.field-selector-btn').removeClass('btn-primary').addClass(function() {
+            return $(this).hasClass('btn-success') ? 'btn-success' : 'btn-outline-secondary';
+        });
+        $(`.field-selector-btn[data-field="${fieldName}"]`).removeClass('btn-success btn-outline-secondary').addClass('btn-primary');
+        
+        // Store current field
+        $('#fieldEditor').data('current-field', fieldName);
+    },
+    
+    formatFieldValue: function(value) {
+        if (value === null || value === undefined) return '';
+        if (Array.isArray(value)) return value.join(', ');
+        if (typeof value === 'object') return JSON.stringify(value, null, 2);
+        return String(value);
+    },
+    
+    parseFieldValue: function(value, fieldName) {
+        if (!value || value.trim() === '') return null;
+        
+        // Check if it's supposed to be an array based on schema
+        if (this.currentSchema && this.currentSchema.properties && this.currentSchema.properties[fieldName]) {
+            const fieldSchema = this.currentSchema.properties[fieldName];
+            if (fieldSchema.type === 'array') {
+                return value.split(',').map(item => item.trim()).filter(item => item);
+            }
+            if (fieldSchema.type === 'number') {
+                const num = parseFloat(value);
+                return isNaN(num) ? null : num;
+            }
+            if (fieldSchema.type === 'integer') {
+                const num = parseInt(value);
+                return isNaN(num) ? null : num;
+            }
+            if (fieldSchema.type === 'boolean') {
+                return value.toLowerCase() === 'true';
+            }
+        }
+        
+        // Try to parse as JSON for objects
+        if (value.startsWith('{') || value.startsWith('[')) {
+            try {
+                return JSON.parse(value);
+            } catch (e) {
+                // If JSON parsing fails, return as string
+            }
+        }
+        
+        return value;
+    },
+    
+    markUnsavedChanges: function() {
+        this.hasUnsavedChanges = true;
+        this.updateUnsavedIndicator();
+        
+        // If editing a specific field, update the transcription object
+        const currentField = $('#fieldEditor').data('current-field');
+        if (currentField) {
+            const fieldValue = $('#fieldEditor').val();
+            const parsedValue = this.parseFieldValue(fieldValue, currentField);
+            
+            if (!this.editingRegion.transcription) {
+                this.editingRegion.transcription = {};
+            }
+            
+            this.editingRegion.transcription[currentField] = parsedValue;
+            
+            // Update raw JSON editor
+            $('#rawJsonEditor').val(JSON.stringify(this.editingRegion.transcription, null, 2));
+            
+            // Update field button
+            const hasValue = parsedValue !== null && parsedValue !== undefined && parsedValue !== '';
+            const button = $(`.field-selector-btn[data-field="${currentField}"]`);
+            button.html(`${currentField} ${hasValue ? '✓' : ''}`);
+            if (hasValue && !button.hasClass('btn-primary')) {
+                button.removeClass('btn-outline-secondary').addClass('btn-success');
+            }
+        }
+        
+        // Handle raw JSON changes
+        if ($(event.target).is('#rawJsonEditor')) {
+            try {
+                const jsonData = JSON.parse($('#rawJsonEditor').val());
+                this.editingRegion.transcription = jsonData;
+                
+                // Update field buttons
+                this.setupFieldEditor(this.editingRegion);
+            } catch (e) {
+                // Invalid JSON, don't update
+            }
+        }
+    },
+    
+    updateUnsavedIndicator: function() {
+        if (this.hasUnsavedChanges) {
+            $('#unsavedIndicator').show();
+            $('#regionViewerSave').prop('disabled', false);
+        } else {
+            $('#unsavedIndicator').hide();
+            $('#regionViewerSave').prop('disabled', true);
+        }
+    },
+    
+    saveRegionChanges: function() {
+        if (!this.editingRegion) return;
+        
+        // Update timestamp
+        this.editingRegion.timestamp = new Date().toISOString();
+        
+        // Mark as saved
+        this.hasUnsavedChanges = false;
+        this.updateUnsavedIndicator();
+        this.originalTranscription = this.editingRegion.transcription ? JSON.parse(JSON.stringify(this.editingRegion.transcription)) : null;
+        
+        // Update the main UI
+        this.renderRegions();
+        this.renderTranscriptions();
+        
+        this.showNotification('Region transcription saved!', 'success');
+    },
+    
+    closeRegionViewer: function() {
+        if (this.hasUnsavedChanges) {
+            if (confirm('You have unsaved changes. Do you want to save before closing?')) {
+                this.saveRegionChanges();
+            } else {
+                // Revert changes
+                this.editingRegion.transcription = this.originalTranscription ? JSON.parse(JSON.stringify(this.originalTranscription)) : null;
+            }
+        }
+        
+        $('#regionViewerModal').hide();
+        this.editingRegion = null;
+        this.hasUnsavedChanges = false;
+        this.originalTranscription = null;
+    },
+    
+    toggleRawJsonView: function() {
+        const rawJsonEditor = $('#rawJsonEditor');
+        if (rawJsonEditor.is(':visible')) {
+            rawJsonEditor.hide();
+            $('#toggleRawJson').text('📄 Toggle Raw JSON View');
+        } else {
+            rawJsonEditor.show().focus();
+            $('#toggleRawJson').text('📄 Hide Raw JSON View');
+        }
     },
     
     selectRegion: function(regionId) {
@@ -221,7 +534,8 @@ var aiTranscription = {
         if (transcribedRegions.length === 0) {
             container.html(`
                 <p style="color: #6b7280; text-align: center; margin-top: 50px;">
-                    Transcriptions will appear here after AI processing.
+                    Transcriptions will appear here after AI processing.<br>
+                    <small>Click on a region to edit its transcription.</small>
                 </p>
             `);
             return;
@@ -237,12 +551,12 @@ var aiTranscription = {
                         <small style="color: #6b7280;">${new Date(region.timestamp).toLocaleString()}</small>
                     </div>
                     <div class="transcription-content">
-                        <textarea class="transcription-text" 
-                                  data-region-id="${region.id}"
-                                  onchange="aiTranscription.updateTranscription(${region.id}, this.value)">${JSON.stringify(region.transcription, null, 2)}</textarea>
-                        <div class="transcription-actions">
-                            <button class="btn-sm btn-success" onclick="aiTranscription.saveTranscription(${region.id})">
-                                💾 Save
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 12px; line-height: 1.4; max-height: 150px; overflow-y: auto;">
+                            ${this.formatTranscriptionPreview(region.transcription)}
+                        </div>
+                        <div class="transcription-actions" style="margin-top: 8px;">
+                            <button class="btn-sm btn-info" onclick="aiTranscription.openRegionViewer(${region.id})">
+                                ✏️ Edit
                             </button>
                             <button class="btn-sm btn-info" onclick="aiTranscription.retranscribeRegion(${region.id})">
                                 🔄 Re-transcribe
@@ -257,6 +571,22 @@ var aiTranscription = {
         });
         
         container.html(html);
+    },
+    
+    formatTranscriptionPreview: function(transcription) {
+        if (!transcription) return '<em>No transcription data</em>';
+        
+        let preview = '';
+        Object.entries(transcription).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && value !== '') {
+                const displayValue = Array.isArray(value) ? value.join(', ') : 
+                                  typeof value === 'object' ? JSON.stringify(value) : String(value);
+                const truncatedValue = displayValue.length > 50 ? displayValue.substring(0, 50) + '...' : displayValue;
+                preview += `<strong>${key}:</strong> ${truncatedValue}<br>`;
+            }
+        });
+        
+        return preview || '<em>No data</em>';
     },
     
     async transcribeSelectedRegion() {
